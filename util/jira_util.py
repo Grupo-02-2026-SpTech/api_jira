@@ -1,27 +1,16 @@
-from models.jira_models import Subtask, Issue
+from models.jira_models import Issue
 
 def parse_issue(data: dict) -> Issue:
     """
     Converte os dados em objetos JSON
     """
-    subtasks = []
-
-    for sub in data["fields"].get("subtasks", []):
-        subtasks.append(
-            Subtask(
-                id=sub["id"],
-                key=sub["key"],
-                descricao=sub["fields"]["summary"]
-            )
-        )
-
+    
     descricao_texto = adf_to_text(data["fields"].get("description"))
 
     issue = Issue(
         id=data["id"],
         descricao=descricao_texto,
         data_entrega=data["fields"].get("duedate"),
-        subtasks=subtasks
     )
 
     return issue
