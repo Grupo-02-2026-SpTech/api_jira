@@ -16,6 +16,7 @@ def save_bronze(issue):
         "card_id": issue.id,
         "descricao": issue.descricao,
         "data_entrega": issue.data_entrega,
+        "assignee": issue.assignee,          
         "data_processamento": agora
     }
 

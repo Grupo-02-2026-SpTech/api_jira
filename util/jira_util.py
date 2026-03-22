@@ -1,16 +1,17 @@
 from models.jira_models import Issue
 
 def parse_issue(data: dict) -> Issue:
-    """
-    Converte os dados em objetos JSON
-    """
-    
     descricao_texto = adf_to_text(data["fields"].get("description"))
+
+    # O assignee pode ser None se o card não tiver responsável atribuído
+    assignee_raw = data["fields"].get("assignee")
+    assignee = assignee_raw["displayName"] if assignee_raw else None
 
     issue = Issue(
         id=data["id"],
         descricao=descricao_texto,
         data_entrega=data["fields"].get("duedate"),
+        assignee=assignee,  # ← adicionar isso
     )
 
     return issue

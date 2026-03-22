@@ -1,6 +1,7 @@
 from config.config import Config
 from service.jira_client import JiraClient
 from service.monitor import JiraMonitor
+from pipeline.silver import run_silver
 from util.log import Log
 
 from dotenv import load_dotenv
@@ -26,20 +27,29 @@ def main():
         token=Config.JIRA_API_TOKEN
     )
 
-
-    # 3. Instancia o Monitor e define que procurará pelo status "xre"
+    # 3. Instancia o Monitor e define que procurará pelo status "Concluído"
     monitor = JiraMonitor(
         client=client,
         status_target="Concluído"
     )
 
-    # 4. Trava a thread executando o monitoramento sem parar (Loop Infinito)
-    try:
-        monitor.start_monitoring()
-    except KeyboardInterrupt:
-        Log.error("\n\nMonitoramento interrompido pelo usuário (CTRL+C). Encerrando a aplicação.")
-    except Exception as e:
-        Log.error(f"\n[ERRO CRÍTICO] A aplicação parou inesperadamente: {e}")
+    # 4. Loop de monitoramento com pipeline Silver após cada ciclo
+    import time
+    Log.info("[Main] Iniciando monitoramento com arquitetura Bronze → Silver")
+
+    while True:
+        try:
+            monitor.process_new_cards()
+            run_silver()
+        except KeyboardInterrupt:
+            Log.error("\n\nMonitoramento interrompido pelo usuário (CTRL+C). Encerrando a aplicação.")
+            break
+        except Exception as e:
+            Log.error(f"\n[ERRO CRÍTICO] A aplicação parou inesperadamente: {e}")
+            break
+
+        time.sleep(Config.POLL_INTERVAL)
+
 
 if __name__ == "__main__":
     main()

@@ -4,5 +4,6 @@ from typing import List, Optional
 
 class Issue(BaseModel):
     id: str
-    descricao: Optional[str] = None
-    data_entrega: Optional[str] = None
+    descricao: str | None = None
+    data_entrega: str | None = None
+    assignee: str | None = None
