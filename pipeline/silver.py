@@ -47,18 +47,16 @@ CHAR_MAP = {
     "\u201c": '"',
     "\u201d": '"',
     "\u2026": "...",
-    "\u00a0": " ",   # non-breaking space
+    "\u00a0": " ",
 }
 
 def _normalizar_caracteres(texto: str) -> str:
     """Substitui caracteres especiais por equivalentes ASCII seguros."""
     for char, substituto in CHAR_MAP.items():
         texto = texto.replace(char, substituto)
-    # Remove demais caracteres não-ASCII que não sejam letras acentuadas do português
     normalizado = []
     for c in texto:
         cat = unicodedata.category(c)
-        # Mantém letras (incluindo acentuadas), números, pontuação e espaço
         if cat.startswith(('L', 'N', 'P', 'Z')) or c in '|:.;,!?@#$%&*()-_+=[]{}/<>\n\r\t':
             normalizado.append(c)
         else:
@@ -117,7 +115,6 @@ def _normalizar_assignee(value) -> str:
     texto = _normalizar_caracteres(str(value).strip())
     if not texto:
         return default
-    # Title case preservando acentos
     return texto.title()
 
 
@@ -223,7 +220,6 @@ def _processar_descricao(value) -> str:
 def _process_stories(df: pd.DataFrame) -> pd.DataFrame:
     Log.info("[Silver] Aplicando transformações e qualidade de dados...")
 
-    # Garante colunas mínimas
     for col, default in DEFAULTS.items():
         if col not in df.columns:
             Log.warning(f"[Silver] Coluna '{col}' ausente na Bronze — preenchendo com '{default}'.")
@@ -231,20 +227,17 @@ def _process_stories(df: pd.DataFrame) -> pd.DataFrame:
 
     total_antes = len(df)
 
-    # Validação e transformação por campo
     df["card_id"]            = df["card_id"].apply(_validar_card_id)
     df["descricao"]          = df["descricao"].apply(_processar_descricao)
     df["data_entrega"]       = df["data_entrega"].apply(lambda v: _parse_date(v, "data_entrega"))
     df["assignee"]           = df["assignee"].apply(_normalizar_assignee)
     df["data_processamento"] = df["data_processamento"].apply(lambda v: _parse_date(v, "data_processamento"))
 
-    # Remove registros com card_id inválido (fallback padrão)
     invalidos = df[df["card_id"] == DEFAULTS["card_id"]]
     if not invalidos.empty:
         Log.warning(f"[Silver] {len(invalidos)} registro(s) com card_id inválido removido(s).")
         df = df[df["card_id"] != DEFAULTS["card_id"]]
 
-    # Deduplicação: mantém o mais recente por card_id
     df = df.sort_values("data_processamento", ascending=False, na_position="last")
     df = df.drop_duplicates(subset=["card_id"], keep="first")
     df = df.sort_values("card_id").reset_index(drop=True)
