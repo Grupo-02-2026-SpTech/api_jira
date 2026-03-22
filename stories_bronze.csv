@@ -20,7 +20,7 @@ Jornada Funcional do Usuário
 - Usuário acessa a página inicial do sistema.
 
 
-- Usuário clica no botão ""Login"" no topo da página.",,,2026-03-22 00:12:58.133909
+- Usuário clica no botão ""Login"" no topo da página.",,,2026-03-22 00:39:35.341556
 10076,"História de Usuário – Comentar em Produto
 
 Título: Permitir que usuário autenticado comente em um produto
@@ -42,8 +42,8 @@ Jornada Funcional do Usuário
 - Usuário acessa a página inicial do sistema.
 
 
-- Usuário clica no botão ""Login"" no topo da página.",2026-03-26,,2026-03-22 00:12:59.129994
-10073,,,,2026-03-22 00:13:00.403643
+- Usuário clica no botão ""Login"" no topo da página.",2026-03-26,,2026-03-22 00:39:36.237023
+10073,,,,2026-03-22 00:39:36.832623
 10071,"História de Usuário – Comentar em Produto
 
 Título: Permitir que usuário autenticado comente em um produto
@@ -151,7 +151,7 @@ Jornada Funcional do Usuário
 
 
 
-- Sistema exibe o comentário na lista de comentários do produto",,,2026-03-22 00:13:00.965633
-10038,,,,2026-03-22 00:13:02.067060
-10001,,2026-03-12,,2026-03-22 00:13:02.946201
-10000,Teste de descrição task 1,2026-03-07,,2026-03-22 00:13:04.950547
+- Sistema exibe o comentário na lista de comentários do produto",,,2026-03-22 00:39:37.465185
+10038,,,,2026-03-22 00:39:38.603716
+10001,,2026-03-12,,2026-03-22 00:39:39.157595
+10000,Teste de descrição task 1,2026-03-07,,2026-03-22 00:39:39.711912
