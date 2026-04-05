@@ -1,12 +1,14 @@
+import sys
+import os
+from datetime import datetime
+
 from config.config import Config
 from service.jira_client import JiraClient
 from service.monitor import JiraMonitor
-from pipeline.silver import run_silver
-from pipeline.enrich_JIRA import run_enrich_jira
+from service.s3_uploader import S3Uploader
+from pipeline.bronze import get_bronze_filename
 from util.log import Log
 
-import os
-import time
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -30,45 +32,37 @@ def main():
         token=Config.JIRA_API_TOKEN
     )
 
-    # 3. Instancia o Monitor e define que procurará pelo status "Concluído"
+    # 3. Instancia o Monitor buscando cards "Concluído" apenas do dia de hoje
     monitor = JiraMonitor(
         client=client,
         status_target="Concluído"
     )
 
-    # 4. Loop de monitoramento com pipeline Bronze → Silver → Enriched após cada ciclo
-    Log.info("[Main] Iniciando monitoramento com arquitetura Bronze → Silver → Enriched")
+    # 4. Processa todos os cards concluídos hoje e salva no CSV Bronze
+    hoje = datetime.now().strftime("%d/%m/%Y")
+    Log.info(f"[Main] Buscando cards concluídos em {hoje}...")
 
-    while True:
-        try:
-            # ── Bronze: coleta novos cards do Jira ───────────────────────────
-            monitor.process_new_cards()
+    monitor.process_new_cards()
 
-            # ── Silver: só roda se o bronze existir ──────────────────────────
-            # Quando não há cards novos, o bronze não é gerado e o Silver
-            # não deve ser chamado — evita quebrar o loop desnecessariamente
-            if not os.path.exists("stories_bronze.csv"):
-                Log.info("[Main] Nenhum card novo encontrado. Aguardando próximo ciclo...")
-            else:
-                # ── Silver: limpeza, normalização e deduplicação ─────────────
-                run_silver()
+    # 5. Verifica se o arquivo Bronze foi gerado
+    bronze_file = get_bronze_filename()
 
-                # ── Enriched: só roda se o silver existir ────────────────────
-                # Garante que o Silver gerou o arquivo antes de enriquecer
-                if not os.path.exists("stories_silver.csv"):
-                    Log.info("[Main] Silver não gerou arquivo. Pulando Enriched.")
-                else:
-                    # ── Enriched: features analíticas e qualidade de texto ───
-                    run_enrich_jira()
+    if not os.path.exists(bronze_file):
+        Log.info(f"[Main] Nenhum card concluído hoje ({hoje}). Nenhum arquivo gerado.")
+        return
 
-        except KeyboardInterrupt:
-            Log.error("\n\nMonitoramento interrompido pelo usuário (CTRL+C). Encerrando a aplicação.")
-            break
-        except Exception as e:
-            Log.error(f"\n[ERRO CRÍTICO] A aplicação parou inesperadamente: {e}")
-            break
+    # 6. Faz upload do arquivo Bronze para o S3 com a data no nome
+    s3_key = f"bronze/{bronze_file}"
+    Log.info(f"[Main] Iniciando upload de '{bronze_file}' → s3://{Config.AWS_S3_BUCKET}/{s3_key}")
 
-        time.sleep(Config.POLL_INTERVAL)
+    uploader = S3Uploader()
+    sucesso = uploader.upload_file(local_path=bronze_file, s3_key=s3_key)
+
+    if sucesso:
+        Log.info("[Main] ✅ Pipeline concluída com sucesso!")
+    else:
+        Log.error("[Main] ❌ Falha no upload para o S3.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

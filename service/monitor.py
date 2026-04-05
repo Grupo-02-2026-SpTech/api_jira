@@ -1,5 +1,3 @@
-import time
-import json
 from service.jira_client import JiraClient
 from config.config import Config
 from util.log import Log
@@ -15,8 +13,8 @@ class JiraMonitor:
         self.processed_issues = set() # Armazena chaves de cards já printados para não floodar o terminal
 
     def build_jql(self) -> str:
-        """Constrói a query do Jira (JQL)."""
-        jql = f'status = "{self.status_target}"'
+        """Constrói a query do Jira (JQL) filtrando cards concluídos hoje."""
+        jql = f'status = "{self.status_target}" AND statusCategoryChangedDate >= startOfDay()'
         if Config.JIRA_PROJECT_KEY:
             jql = f'project = "{Config.JIRA_PROJECT_KEY}" AND ' + jql
         return jql

@@ -1,60 +1,116 @@
 # 📋 Documentação — jiraAPI
 
-> Monitor automático de cards do Jira que detecta issues com status **"Concluído"** e salva os dados em arquivos CSV (camada Bronze).
+> Pipeline de dados que busca cards do Jira com status **"Concluído"** no dia atual, salva na camada **Bronze** (CSV local) e envia para a AWS S3. As camadas **Silver** e **Gold** são processadas automaticamente via **AWS Lambda**, formando uma arquitetura medalhão completa.
 
 ---
 
-## 🚀 Passo a Passo — Como configurar e rodar o app
+## 🏗️ Arquitetura Geral
+
+```
+python main.py  (execução manual, uma vez por dia)
+  │
+  └─ Busca cards concluídos HOJE no Jira
+       └─ Salva: stories_bronze_YYYY-MM-DD.csv
+            └─ Upload → s3://bronze-gp02/bronze/stories_bronze_YYYY-MM-DD.csv
+                 │
+                 └─ [Trigger automático] Lambda: bronze-to-silver
+                      └─ Processa e salva → s3://silver-gp02/silver/stories_silver_YYYY-MM-DD.csv
+                           │
+                           └─ [Trigger automático] Lambda: silver-to-gold
+                                └─ Enriquece e salva → s3://gold-gp02/gold/stories_gold_YYYY-MM-DD.csv
+```
+
+---
+
+## ☁️ Infraestrutura AWS necessária
+
+### 1. Buckets S3
+
+Crie os três buckets abaixo na AWS antes de rodar a aplicação:
+
+| Bucket | Finalidade |
+|---|---|
+| `bronze-gp02` | Recebe o CSV bruto gerado pelo `main.py` |
+| `silver-gp02` | Recebe o CSV tratado pelo Lambda Silver |
+| `gold-gp02` | Recebe o CSV enriquecido pelo Lambda Gold |
+
+---
+
+### 2. Funções Lambda
+
+Crie duas funções Lambda com **Python 3.12**, **arquitetura x86_64** e **timeout de 30 segundos**:
+
+#### Lambda 1 — `bronze-to-silver`
+- **Código:** `lambda/lambda_function.py`
+- **Trigger:** S3 → bucket `bronze-gp02`, prefix `bronze/stories_bronze_`, suffix `.csv`
+- **Permissões:** `s3:GetObject` em `bronze-gp02` + `s3:PutObject` em `silver-gp02`
+- **Layer:** `AWSSDKPandas-Python314` (ou Python312)
+
+#### Lambda 2 — `silver-to-gold`
+- **Código:** `lambda/lambda_gold.py`
+- **Trigger:** S3 → bucket `silver-gp02`, prefix `silver/stories_silver_`, suffix `.csv`
+- **Permissões:** `s3:GetObject` em `silver-gp02` + `s3:PutObject` em `gold-gp02`
+- **Layer:** `AWSSDKPandas-Python314` (ou Python312)
+
+> ⚠️ **Timeout mínimo recomendado: 30 segundos.** Com 1s a função será encerrada antes de concluir.
+
+---
+
+### 3. Credenciais AWS
+
+As credenciais precisam estar configuradas no arquivo `.env` do projeto local.
+
+> 📌 **Conta AWS Academy (Learner Lab):** as credenciais são **temporárias** e expiram a cada ~4 horas. Sempre que for rodar, atualize o `.env` com as credenciais do portal do Learner Lab (**AWS Details → Show**).
+
+---
+
+## 🚀 Passo a Passo — Como configurar e rodar
 
 ### 1. Pré-requisitos
 
 - Python **3.10+** instalado
 - Conta no Jira com acesso à API
 - Um **API Token** gerado em: https://id.atlassian.com/manage-profile/security/api-tokens
+- Conta AWS com os 3 buckets S3 e 2 Lambdas configurados (ver seção acima)
 
 ---
 
 ### 2. Instalar as dependências
 
-No terminal, dentro da pasta do projeto, execute:
-
 ```bash
 pip install -r requirements.txt
 ```
 
-As bibliotecas instaladas são:
-
 | Biblioteca | Para que serve |
 |---|---|
-| `requests` | Fazer chamadas HTTP para a API do Jira |
-| `python-dotenv` | Carregar variáveis de ambiente do arquivo `.env` |
-| `pydantic` | Validar e tipificar os dados retornados pelo Jira |
-| `pandas` | Manipular e salvar os dados em arquivos CSV |
+| `requests` | Chamadas HTTP para a API do Jira |
+| `python-dotenv` | Carrega variáveis do arquivo `.env` |
+| `pydantic` | Valida e tipifica os dados do Jira |
+| `pandas` | Manipula e salva os dados em CSV |
+| `boto3` | Faz upload dos arquivos para o S3 |
 
 ---
 
 ### 3. Configurar o arquivo `.env`
 
-Crie (ou edite) o arquivo `.env` na raiz do projeto com o seguinte conteúdo:
+Crie (ou edite) o arquivo `.env` na raiz do projeto:
 
 ```env
-# URL base da sua instância do Jira
+# ── Jira ──────────────────────────────────
 JIRA_URL=https://sua-empresa.atlassian.net
-
-# E-mail da conta usada para gerar o token
 JIRA_EMAIL=seu-email@empresa.com
-
-# Token de API gerado no painel da Atlassian
 JIRA_API_TOKEN=seu_token_aqui
-
-# Chave do projeto Jira a ser monitorado (ex: SCRUM, PROJ, DEV)
 JIRA_PROJECT_KEY=SCRUM
 
-# Intervalo, em segundos, entre cada verificação (padrão: 30)
-POLL_INTERVAL=5
+# ── AWS S3 ────────────────────────────────
+AWS_ACCESS_KEY_ID=ASIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_SESSION_TOKEN=...        # Obrigatório para AWS Academy
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=bronze-gp02
 ```
 
-> ⚠️ **Nunca suba o `.env` para o repositório.** Certifique-se de que ele está listado no `.gitignore`.
+> ⚠️ **Nunca suba o `.env` para o repositório.** Ele já está no `.gitignore`.
 
 ---
 
@@ -64,27 +120,18 @@ POLL_INTERVAL=5
 python main.py
 ```
 
-A aplicação vai iniciar o monitoramento e exibir logs no terminal. Para interromper, pressione **CTRL+C**.
+A aplicação executa **uma única vez**, buscando todos os cards concluídos **no dia atual**, e encerra automaticamente após o upload para o S3.
 
 **Exemplo de saída esperada:**
 
 ```
-2025-01-01 12:00:00 | INFO | monitor.py:60 | [*] Iniciando monitoramento do Jira...
-2025-01-01 12:00:00 | INFO | monitor.py:61 | [*] Status alvo: 'Concluído'
-2025-01-01 12:00:00 | INFO | monitor.py:62 | [*] Intervalo: 5 segundos
-2025-01-01 12:00:00 | INFO | monitor.py:63 | [*] Pressione CTRL+C para parar.
+INFO | main.py | [Main] Buscando cards concluídos em 05/04/2026...
+INFO | monitor.py | NOVO CARD NO STATUS 'CONCLUÍDO': 10042
+INFO | bronze.py | Arquivo 'stories_bronze_2026-04-05.csv' criado com sucesso.
+INFO | main.py | [Main] Iniciando upload → s3://bronze-gp02/bronze/stories_bronze_2026-04-05.csv
+INFO | s3_uploader.py | [S3] Upload concluído com sucesso!
+INFO | main.py | [Main] ✅ Pipeline concluída com sucesso!
 ```
-
----
-
-### 5. Verificar os dados gerados
-
-Após detectar cards, dois arquivos CSV serão gerados (ou atualizados) na raiz do projeto:
-
-| Arquivo | Conteúdo |
-|---|---|
-| `stories_bronze.csv` | Dados das histórias (cards) detectados |
-| `subtasks_bronze.csv` | Subtasks relacionadas a cada card |
 
 ---
 
@@ -93,173 +140,117 @@ Após detectar cards, dois arquivos CSV serão gerados (ou atualizados) na raiz 
 ```
 jiraAPI/
 │
-├── main.py                  # Ponto de entrada da aplicação
-├── requirements.txt         # Dependências Python
-├── .env                     # Variáveis de ambiente (não versionar)
-├── stories_bronze.csv       # Saída: dados das histórias (gerado automaticamente)
-├── subtasks_bronze.csv      # Saída: dados das subtasks (gerado automaticamente)
+├── main.py                      # Ponto de entrada — roda manualmente uma vez por dia
+├── requirements.txt             # Dependências Python
+├── .env                         # Variáveis de ambiente (não versionar)
 │
 ├── config/
-│   └── config.py            # Centraliza e valida as variáveis de ambiente
-│
-├── jira/
-│   ├── jira_client.py       # Comunicação direta com a API REST do Jira
-│   └── monitor.py           # Orquestra o loop de monitoramento
-│
-├── models/
-│   └── jira_models.py       # Modelos de dados (Pydantic)
+│   └── config.py                # Centraliza e valida variáveis do .env (Jira + AWS)
 │
 ├── pipeline/
-│   └── bronze.py            # Camada Bronze: salva dados brutos em CSV
+│   ├── bronze.py                # Camada Bronze: salva CSV com data no nome
+│   ├── silver.py                # Camada Silver: limpeza e padronização
+│   └── enrich_JIRA.py           # Camada Gold: enriquecimento e métricas analíticas
+│
+├── service/
+│   ├── jira_client.py           # Comunicação com a API REST do Jira
+│   ├── monitor.py               # Orquestra a busca de cards (JQL filtrado para hoje)
+│   └── s3_uploader.py           # Upload de arquivos para o S3
+│
+├── lambda/
+│   ├── lambda_function.py       # Lambda Bronze → Silver (cola no console AWS)
+│   └── lambda_gold.py           # Lambda Silver → Gold (cola no console AWS)
+│
+├── models/
+│   └── jira_models.py           # Modelos de dados Pydantic (Issue, Subtask)
 │
 └── util/
-    ├── jira_util.py         # Funções de parsing dos dados do Jira
-    └── log.py               # Sistema de logging centralizado
+    ├── jira_util.py             # Parse do JSON do Jira + conversão de ADF para texto
+    └── log.py                   # Sistema de logging centralizado
 ```
 
 ---
 
-## 📁 Descrição das Pastas e Arquivos
-
----
+## 📁 Descrição dos Principais Arquivos
 
 ### `main.py` — Ponto de Entrada
 
-Arquivo principal que inicializa a aplicação. Executa as seguintes etapas em sequência:
+Executado **manualmente uma vez por dia**. Realiza as seguintes etapas em sequência:
 
-1. **Valida** as credenciais carregadas do `.env` via `Config.validate()`
-2. **Instancia** o `JiraClient` com as credenciais
-3. **Instancia** o `JiraMonitor` configurado para detectar cards com status `"Concluído"`
-4. **Inicia** o loop infinito de monitoramento com `monitor.start_monitoring()`
-
----
-
-### 📁 `config/`
-
-#### `config.py` — Classe `Config`
-
-Centraliza **todas** as configurações da aplicação lidas do arquivo `.env`.
-
-| Atributo | Variável de Ambiente | Descrição |
-|---|---|---|
-| `JIRA_URL` | `JIRA_URL` | URL base da instância Jira |
-| `JIRA_EMAIL` | `JIRA_EMAIL` | E-mail de autenticação |
-| `JIRA_API_TOKEN` | `JIRA_API_TOKEN` | Token da API Atlassian |
-| `JIRA_PROJECT_KEY` | `JIRA_PROJECT_KEY` | Chave do projeto a monitorar |
-| `POLL_INTERVAL` | `POLL_INTERVAL` | Intervalo em segundos entre verificações |
-
-**Método importante:**
-- `validate()` — Verifica se as variáveis obrigatórias (`JIRA_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`) estão presentes. Lança `ValueError` se alguma estiver faltando.
-
----
-
-### 📁 `jira/`
-
-#### `jira_client.py` — Classe `JiraClient`
-
-Responsável pela **comunicação direta com a API REST do Jira**. Utiliza autenticação via `HTTPBasicAuth` (e-mail + token).
-
-| Método | Descrição |
-|---|---|
-| `search_issues(jql_query, max_results)` | Busca cards usando JQL (Jira Query Language) |
-| `get_issue_details(issue_key)` | Busca o JSON completo de um card pelo seu ID e retorna um objeto `Issue` já parseado |
-
----
-
-#### `monitor.py` — Classe `JiraMonitor`
-
-Responsável por **orquestrar o monitoramento contínuo**. Mantém um `set` de IDs já processados para evitar reprocessar o mesmo card.
-
-| Método | Descrição |
-|---|---|
-| `build_jql()` | Monta a query JQL com o status-alvo e a chave do projeto |
-| `process_new_cards()` | Executa a busca e filtra apenas cards ainda não processados |
-| `_handle_matched_issue(issue_key)` | Pega os detalhes completos do card e aciona o `save_bronze()` |
-| `start_monitoring()` | Loop infinito: chama `process_new_cards()` e dorme por `POLL_INTERVAL` segundos |
-
----
-
-### 📁 `models/`
-
-#### `jira_models.py` — Classes `Issue` e `Subtask`
-
-Define os **modelos de dados** usando **Pydantic**, garantindo tipagem e validação automática.
-
-**`Subtask`**
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `id` | `str` | ID interno da subtask no Jira |
-| `key` | `str` | Chave legível (ex: `SCRUM-42`) |
-| `descricao` | `str` | Título/sumário da subtask |
-
-**`Issue`**
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `id` | `str` | ID interno do card no Jira |
-| `descricao` | `str` (opcional) | Texto da descrição do card (convertido de ADF para texto puro) |
-| `data_entrega` | `str` (opcional) | Data de entrega (`duedate`) |
-| `subtasks` | `List[Subtask]` | Lista de subtasks vinculadas |
+1. Valida as credenciais (Jira + AWS) carregadas do `.env`
+2. Busca no Jira todos os cards com status `"Concluído"` **alterados hoje** (`statusCategoryChangedDate >= startOfDay()`)
+3. Salva os dados em `stories_bronze_YYYY-MM-DD.csv`
+4. Faz upload para `s3://bronze-gp02/bronze/stories_bronze_YYYY-MM-DD.csv`
+5. Encerra a execução
 
 ---
 
 ### 📁 `pipeline/`
 
-#### `bronze.py` — Função `save_bronze(issue)`
+| Arquivo | Camada | O que faz |
+|---|---|---|
+| `bronze.py` | Bronze | Salva os dados brutos do Jira em CSV com a data no nome |
+| `silver.py` | Silver | Normaliza datas, textos, assignee e deduplica por `card_id` |
+| `enrich_JIRA.py` | Gold | Gera métricas de qualidade, lead time, score e complexidade textual |
 
-Implementa a **camada Bronze** da pipeline de dados. Recebe um objeto `Issue` e persiste os dados brutos em arquivos CSV, sem nenhuma transformação.
+---
 
-- Salva os dados da história em `stories_bronze.csv`
-- Salva as subtasks em `subtasks_bronze.csv`
-- Se o arquivo já existir, **acrescenta** os dados (modo `append`); se não existir, **cria** o arquivo com cabeçalho
+### 📁 `lambda/`
+
+| Arquivo | Trigger | Entrada | Saída |
+|---|---|---|---|
+| `lambda_function.py` | PutObject em `bronze-gp02` | `stories_bronze_YYYY-MM-DD.csv` | `stories_silver_YYYY-MM-DD.csv` em `silver-gp02` |
+| `lambda_gold.py` | PutObject em `silver-gp02` | `stories_silver_YYYY-MM-DD.csv` | `stories_gold_YYYY-MM-DD.csv` em `gold-gp02` |
+
+---
+
+### 📁 `service/`
+
+#### `s3_uploader.py`
+Faz o upload de arquivos locais para o S3 usando `boto3`. Usa as credenciais definidas no `.env` (incluindo `AWS_SESSION_TOKEN` para contas Academy).
+
+#### `monitor.py`
+Monta a JQL e busca cards concluídos **apenas no dia atual**. Aciona `save_bronze()` para cada card novo encontrado.
+
+#### `jira_client.py`
+Comunicação direta com a API REST do Jira via `HTTPBasicAuth`.
 
 ---
 
 ### 📁 `util/`
 
-#### `jira_util.py` — Funções `parse_issue()` e `adf_to_text()`
-
-Contém funções auxiliares de **transformação e parsing** dos dados retornados pela API.
-
+#### `jira_util.py`
 | Função | Descrição |
 |---|---|
-| `parse_issue(data)` | Recebe o JSON bruto da API do Jira e converte para um objeto `Issue` tipado |
-| `adf_to_text(adf)` | Converte o formato de descrição do Jira (**Atlassian Document Format**) em texto puro, percorrendo recursivamente os nós do documento |
+| `parse_issue(data)` | Converte o JSON bruto da API em um objeto `Issue` tipado |
+| `adf_to_text(adf)` | Converte o formato ADF (Atlassian Document Format) para texto puro |
+
+#### `log.py`
+Sistema de logging centralizado com data/hora, nível, arquivo e linha.
 
 ---
 
-#### `log.py` — Classe `Log`
-
-Sistema de **logging centralizado** para a aplicação, usando o módulo `logging` do Python. Exibe data/hora, nível do log, arquivo e número da linha.
-
-| Método estático | Nível | Uso |
-|---|---|---|
-| `Log.info(msg)` | INFO | Mensagens de progresso normal |
-| `Log.warning(msg)` | WARNING | Avisos não críticos |
-| `Log.error(msg)` | ERROR | Erros recuperáveis |
-| `Log.debug(msg)` | DEBUG | Informações detalhadas para desenvolvimento |
-| `Log.critical(msg)` | CRITICAL | Erros fatais |
-
----
-
-## 🔄 Fluxo de Execução
+## 🔄 Fluxo Detalhado de Execução
 
 ```
-main.py
+python main.py
   │
-  ├─ Config.validate()           → Valida credenciais do .env
+  ├─ Config.validate()
+  │    └─ Verifica Jira + AWS credentials
   │
-  ├─ JiraClient(url, email, token)
+  ├─ JiraMonitor.process_new_cards()
+  │    └─ JQL: status = "Concluído" AND statusCategoryChangedDate >= startOfDay()
+  │         └─ Para cada card novo:
+  │              ├─ get_issue_details() → JSON completo
+  │              ├─ parse_issue()       → objeto Issue (Pydantic)
+  │              └─ save_bronze()       → stories_bronze_YYYY-MM-DD.csv
   │
-  └─ JiraMonitor.start_monitoring()
-       │
-       └─ [Loop a cada POLL_INTERVAL segundos]
+  └─ S3Uploader.upload_file()
+       └─ s3://bronze-gp02/bronze/stories_bronze_YYYY-MM-DD.csv
             │
-            ├─ build_jql()         → Monta a query JQL
-            ├─ search_issues()     → Chama a API do Jira
-            │
-            └─ [Para cada card novo encontrado]
-                 │
-                 ├─ get_issue_details()  → Busca JSON completo do card
-                 ├─ parse_issue()        → Converte JSON → objeto Issue (Pydantic)
-                 └─ save_bronze()        → Salva em stories_bronze.csv e subtasks_bronze.csv
+            └─ [AWS Event] Lambda bronze-to-silver dispara
+                 └─ Lê bronze do S3 → aplica Silver → salva em silver-gp02
+                      │
+                      └─ [AWS Event] Lambda silver-to-gold dispara
+                           └─ Lê silver do S3 → enriquece → salva em gold-gp02
 ```
