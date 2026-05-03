@@ -52,7 +52,7 @@ def main():
         return
 
     # 6. Faz upload do arquivo Bronze para o S3 com a data no nome
-    s3_key = f"bronze/{bronze_file}"
+    s3_key = f"{bronze_file}"
     Log.info(f"[Main] Iniciando upload de '{bronze_file}' → s3://{Config.AWS_S3_BUCKET}/{s3_key}")
 
     uploader = S3Uploader()
