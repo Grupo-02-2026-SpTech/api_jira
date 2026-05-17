@@ -77,6 +77,12 @@ As credenciais precisam estar configuradas no arquivo `.env` do projeto local.
 
 ### 2. Instalar as dependências
 
+#### ⚡ Forma Recomendada (Windows)
+
+Clique duplo no arquivo **`install_dependencies.bat`** na raiz do projeto. Ele instalará automaticamente todas as bibliotecas necessárias em um único clique.
+
+#### Alternativa (Linux/Mac ou Manual)
+
 ```bash
 pip install -r requirements.txt
 ```
